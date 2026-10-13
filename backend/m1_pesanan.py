@@ -1,4 +1,4 @@
-"""backend/m1_pesanan.py - M1: Array (tahap 1)"""
+"""backend/m1_pesanan.py - M1: Array vs Linked List"""
 import csv
 
 
@@ -57,8 +57,75 @@ class Array:
         return nilai
 
 
-def muat_csv(path, larik):
-    """Isi Array dengan data pesanan.csv. Return jumlah baris."""
+class Node:
+    def __init__(self, nilai):
+        self.nilai, self.next = nilai, None
+
+
+class LinkList:
+    def __init__(self):
+        self.head = self.tail = None
+        self.ukuran = 0
+
+    def tambah_reguler(self, v):                 # belakang lewat tail: O(1)
+        n = Node(v)
+        if self.head is None:
+            self.head = self.tail = n
+        else:
+            self.tail.next = n
+            self.tail = n
+        self.ukuran += 1
+
+    def tambah_vip(self, v):                     # depan: O(1)
+        n = Node(v)
+        n.next = self.head
+        self.head = n
+        if self.tail is None:
+            self.tail = n
+        self.ukuran += 1
+
+    def tambah_prioritas(self, v):               # tengah: telusur O(n), sambung O(1)
+        i = self.ukuran // 2
+        if i == 0:
+            return self.tambah_vip(v)
+        sebelum = self.head
+        for _ in range(i - 1):
+            sebelum = sebelum.next
+        n = Node(v)
+        n.next = sebelum.next
+        sebelum.next = n
+        if n.next is None:
+            self.tail = n
+        self.ukuran += 1
+
+    def lihat(self, i):                          # O(n)
+        cek(i, self.ukuran)
+        sekarang = self.head
+        for _ in range(i):
+            sekarang = sekarang.next
+        return sekarang.nilai
+
+    def hapus(self, i):                          # telusur O(n), cabut O(1)
+        cek(i, self.ukuran)
+        if i == 0:
+            simpul = self.head
+            self.head = simpul.next
+            if self.head is None:
+                self.tail = None
+        else:
+            sebelum = self.head
+            for _ in range(i - 1):
+                sebelum = sebelum.next
+            simpul = sebelum.next
+            sebelum.next = simpul.next
+            if simpul is self.tail:
+                self.tail = sebelum
+        self.ukuran -= 1
+        return simpul.nilai
+
+
+def muat_csv(path, larik, rantai):
+    """Isi Array dan LinkList dengan data yang sama. Return jumlah baris."""
     jumlah = 0
     with open(path, newline="", encoding="utf-8-sig") as f:
         baca = csv.reader(f)
@@ -67,11 +134,13 @@ def muat_csv(path, larik):
             selesai = int(b[7]) if b[7] != "" else None
             p = Pesanan(b[0], b[1], b[2], b[3], int(b[4]), int(b[5]), int(b[6]), selesai, b[8])
             larik.tambah_reguler(p)
+            rantai.tambah_reguler(p)
             jumlah += 1
     return jumlah
 
 
 if __name__ == "__main__":
-    a = Array()
-    print("Dimuat:", muat_csv("../data/pesanan.csv", a), "pesanan")
+    a, r = Array(), LinkList()
+    print("Dimuat:", muat_csv("../data/pesanan.csv", a, r), "pesanan")
     print(a.lihat(0))
+    print(r.lihat(0))
