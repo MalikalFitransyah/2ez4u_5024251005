@@ -1,11 +1,11 @@
 """backend/m2_antrean.py - M2: Tumpukan, kasir postfix, antrean naif vs melingkar, undo/redo"""
 try:
-    from .m1_pesanan import Array
-except ImportError:                              # dijalankan dari folder backend
-    from m1_pesanan import Array
+    from .m1_pesanan import Array, Node
+except ImportError:                              
+    from m1_pesanan import Array, Node
  
  
-class Tumpukan:                                  # stack (LIFO) di atas Array milik M1
+class Tumpukan:                                  
     def __init__(self): self.larik = Array()
     def push(self, x): self.larik.tambah_reguler(x)
     def kosong(self): return self.larik.ukuran == 0
@@ -19,13 +19,13 @@ class Tumpukan:                                  # stack (LIFO) di atas Array mi
  
     def pop(self):
         x = self.peek()
-        self.larik.hapus(self.larik.ukuran - 1)  
+        self.larik.hapus(self.larik.ukuran - 1)  # ambil dari ujung, tanpa geser
         return x
  
  
 # kasir
 def angka(t): return "0" <= t[0] <= "9" or t[0] == "."
-def kuat(op): return 2 if op in "*/" else 1 if op in "+-" else 0    
+def kuat(op): return 2 if op in "*/" else 1 if op in "+-" else 0    # "(" = 0
  
  
 def gabung(larik, kosong=""):                    
@@ -108,7 +108,7 @@ def hitung(postfix, jejak=None):
         else:
             if st.panjang() < 2:
                 raise ValueError("Ekspresi tidak valid")
-            b = st.pop()                         
+            b = st.pop()                         # operand KANAN keluar lebih dulu
             a = st.pop()
             if t == "+": r = a + b
             elif t == "-": r = a - b
@@ -145,7 +145,7 @@ class AntreanNaif:
         self.total_geser += self.larik.ukuran - 1
         return self.larik.hapus(0)
  
-    def keluar_belakang(self):                              
+    def keluar_belakang(self):                               
         if self.larik.ukuran == 0:
             return None
         return self.larik.hapus(self.larik.ukuran - 1)
@@ -201,14 +201,35 @@ class AntreanMelingkar:
         return x
  
  
-#  undo / redo
+# undo / redo
+def _sisip_di(struktur, i, pesanan):
+    """Sisipkan pesanan di indeks i pada Array maupun LinkList milik M1
+    (LinkList M1 tidak punya sisip di indeks bebas, jadi bagian tengah disambung di sini)."""
+    if i == 0:
+        struktur.tambah_vip(pesanan)
+    elif i == struktur.ukuran:
+        struktur.tambah_reguler(pesanan)
+    elif hasattr(struktur, "sisip"):                         
+        struktur.sisip(i, pesanan)
+    else:                                                    
+        sebelum = struktur.head
+        for _ in range(i - 1):
+            sebelum = sebelum.next
+        n = Node(pesanan)
+        n.next = sebelum.next
+        sebelum.next = n
+        struktur.ukuran += 1
+ 
+ 
 class LayananAntrean:
     """Catatan undo = tuple (jenis, data, versi):
        ("ENQUEUE", pesanan, None)          undo: keluarkan dari BELAKANG kedua antrean
        ("DEQUEUE", Array pesanan, versi)   undo: kembalikan semuanya ke DEPAN antrean itu
-       ("ORDER", (struktur, jenis, i, pesanan), nama)
-                                           M1 menambah pesanan -> undo: hapus(i) dari struktur
-                                           redo: tambah_<jenis>(pesanan), jatuh di indeks yang sama"""
+       ("ORDER", (struktur, jenis, i, pesanan), nama)   M1 menambah pesanan
+                                           undo: hapus(i) dari struktur, redo: sisipkan lagi di i
+       ("HAPUS", (struktur, None, i, pesanan), nama)    M1 menghapus pesanan
+                                           undo: sisipkan lagi di i, redo: hapus(i)
+       Semua perubahan M1 dicatat, jadi undo selalu berurutan (LIFO) dan indeksnya tidak meleset."""
  
     def __init__(self):
         self.naif, self.melingkar = AntreanNaif(), AntreanMelingkar()
@@ -221,6 +242,10 @@ class LayananAntrean:
     def catat_order(self, struktur, jenis, indeks, pesanan, nama):
         """Dipanggil setelah M1 menambah pesanan. jenis: reguler / prioritas / vip."""
         self._catat(("ORDER", (struktur, jenis, indeks, pesanan), nama))
+ 
+    def catat_hapus(self, struktur, indeks, pesanan, nama):
+        """Dipanggil setelah M1 menghapus pesanan dari indeks tersebut."""
+        self._catat(("HAPUS", (struktur, None, indeks, pesanan), nama))
  
     def enqueue(self, pesanan):                  
         self.naif.enqueue(pesanan)
@@ -251,6 +276,8 @@ class LayananAntrean:
             self.melingkar.keluar_belakang()
         elif jenis == "ORDER":
             data[0].hapus(data[2])
+        elif jenis == "HAPUS":
+            _sisip_di(data[0], data[2], data[3])
         else:
             antrean = self.naif if versi == "naif" else self.melingkar
             for i in range(data.ukuran - 1, -1, -1):         
@@ -267,7 +294,9 @@ class LayananAntrean:
             self.naif.enqueue(data)
             self.melingkar.enqueue(data)
         elif jenis == "ORDER":                   
-            getattr(data[0], "tambah_" + data[1])(data[3])
+            _sisip_di(data[0], data[2], data[3])
+        elif jenis == "HAPUS":
+            data[0].hapus(data[2])
         else:
             antrean = self.naif if versi == "naif" else self.melingkar
             for _ in range(data.ukuran):
